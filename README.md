@@ -1,0 +1,2 @@
+# AutoMuse
+Storyboarding bootstrap tool. 
