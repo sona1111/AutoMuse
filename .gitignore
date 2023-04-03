@@ -127,3 +127,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+/sketch2pose-main/assets/models_smplx_v1_1.zip
