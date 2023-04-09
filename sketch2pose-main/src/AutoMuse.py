@@ -67,13 +67,42 @@ from pose import main_infer, main_infer_get_models
 
 class AutoMuse():
 
-    def __init__(self):
+    def __init__(self, cmds):
         print("Loading models")
         self.loaded_model_args = main_infer_get_models(use_contacts=False, use_msc=False)
         # model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel
         print("Models loaded")
+        self.cmds = cmds
         
     
+    def create_skeleton_joints(self, joints):
+        SKELETON = (0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 12, 12, 13, 14, 16, 17, 18, 19)
+        
+        self.cmds.select( d=True )
+        
+        maya_joints = []
+        
+        def append(j, pos):
+            self.cmds.select(j)
+            maya_joints.append(self.cmds.joint(p=pos))
+           
+        #joints = {JOINTS[i]: joints[i,:] for i in range(len(JOINTS))}
+        
+        
+        maya_joints.append(self.cmds.joint(p=joints[0]))
+        for i in range(len(SKELETON)):
+            from_j = maya_joints[SKELETON[i]]
+            to_pos = joints[i+1]
+            append(from_j, to_pos) 
+        
+    def generate_single(self, imgdata, scale=1.0):
+        """
+        In maya, make a single new skeleton based on a single drawing
+        """
+        joints = self.process("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/IMG_0013_000125.jpg")
+        joints = (joints * scale).tolist()
+        self.create_skeleton_joints(joints)
+        
         
     def process(self, imgPath):
-        return main_infer([imgPath], *self.loaded_model_args)
+        return main_infer([imgPath], *self.loaded_model_args)[0]
