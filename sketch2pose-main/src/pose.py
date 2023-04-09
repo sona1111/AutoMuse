@@ -1961,10 +1961,9 @@ def main():
             summary_writer,
             save_path,
         )
+        
 
-def main_infer(image_paths, use_contacts=False, use_msc=False, ):
-    #args = parse_args()
-    #print(args)
+def main_infer_get_models(use_contacts, use_msc):
 
     # models
     model_pose = cv2.dnn.readNetFromONNX(
@@ -2056,13 +2055,22 @@ def main_infer(image_paths, use_contacts=False, use_msc=False, ):
         assert c_new_mse == 0
     elif c_mse == 0:
         assert c_new_mse > 0
+        
+    return model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel
+
+
+def main_infer(image_paths, model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel):
+    #args = parse_args()
+    #print(args)
+
+    #model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel = main_infer_get_models(use_contacts, use_msc)
 
     #root_path = Path(args.save_path)
     #root_path.mkdir(exist_ok=True, parents=True)
 
     path_to_imgs = [Path(x) for x in image_paths]
 
-    print("-Models loaded-")
+    
     joints_return = []
 
     for img_path in path_to_imgs:
@@ -2146,7 +2154,8 @@ def main_infer(image_paths, use_contacts=False, use_msc=False, ):
 
 if __name__ == "__main__":
     #main()
-    #infer_result = main_infer(["data/images/010.jpg"])
+    model_args = main_infer_get_models(use_contacts=False, use_msc=False)
+    infer_result = main_infer(["data/images/010.jpg"], *model_args)
     #print("Result")
-    #print(infer_result)
+    print(infer_result)
     pass

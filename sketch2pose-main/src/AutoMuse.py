@@ -63,12 +63,17 @@ print(out)
 
 """
 
-from pose import main_infer
+from pose import main_infer, main_infer_get_models
 
 class AutoMuse():
 
     def __init__(self):
-        pass
+        print("Loading models")
+        self.loaded_model_args = main_infer_get_models(use_contacts=False, use_msc=False)
+        # model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel
+        print("Models loaded")
+        
+    
         
     def process(self, imgPath):
-        return main_infer([imgPath])
+        return main_infer([imgPath], *self.loaded_model_args)
