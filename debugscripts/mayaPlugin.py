@@ -12,16 +12,31 @@ if 'C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/src' not in sys.path:
 from AutoMuse import AutoMuse
 autoMuse = AutoMuse(cmds)
 
+#image = QtGui.QImage("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/IMG_0013_000125.jpg")
+
 class Canvas(QtWidgets.QLabel):
 
     def __init__(self):
         super().__init__()
         pixmap = QtGui.QPixmap(600, 300)
         pixmap.fill(Qt.white)
+        #pixmap = pixmap.fromImage(image)
         self.setPixmap(pixmap)
 
         self.last_x, self.last_y = None, None
         self.pen_color = QtGui.QColor('#000000')
+        
+    def update_image(self, path):
+        print("loading path", path)
+        image = QtGui.QImage(path)
+        pixmap = QtGui.QPixmap(600, 300)
+        pixmap = pixmap.fromImage(image)        
+        self.setPixmap(pixmap)
+        
+    def save_image(self, path):
+        image = self.pixmap().toImage()
+        image.save(path)
+
 
     def set_pen_color(self, c):
         self.pen_color = QtGui.QColor(c)
@@ -71,6 +86,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
         
         self.canvas = Canvas()
+        self.TMP_IMG_PATH = "C:/Users/sunli/Pictures/TMP_AUTOMUSE.png"
 
         self.centralwidget = QtWidgets.QWidget(self)
         #self.resize(500, 500)
@@ -89,6 +105,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         clearBtn = QtWidgets.QPushButton("Clear")
         row2.addWidget(clearBtn)
         loadImgBtn = QtWidgets.QPushButton("Load Image")
+        loadImgBtn.clicked.connect(self.loadImage)
         row2.addWidget(loadImgBtn)
         genSkelBtn = QtWidgets.QPushButton("Generate Skeleton")
         genSkelBtn.clicked.connect(self.genSkeleton)
@@ -153,10 +170,30 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("MainWindow")
         self.pushButton.setText("test")
         
+    def loadImage(self):
+      fname = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', 
+         'c:\\',"Image files (*.jpg *.gif, *.jpeg, *.png)")
+      self.canvas.update_image(fname[0])
+      
+    def getfiles(self):
+      #unfinished
+      dlg = QFileDialog()
+      dlg.setFileMode(QFileDialog.AnyFile)
+      dlg.setFilter("Text files (*.txt)")
+      filenames = QStringList()
+		
+      if dlg.exec_():
+         filenames = dlg.selectedFiles()
+         f = open(filenames[0], 'r')
+			
+         with f:
+            data = f.read()
+            self.contents.setText(data)
         
     def genSkeleton(self):
         print(self.scaleSpinner.value())
-        autoMuse.generate_single(None, scale=self.scaleSpinner.value())
+        self.canvas.save_image(self.TMP_IMG_PATH)
+        autoMuse.generate_single(self.TMP_IMG_PATH, scale=self.scaleSpinner.value())
         
     def mouseMoveEvent(self, e):
         if self.last_x is None: # First event.

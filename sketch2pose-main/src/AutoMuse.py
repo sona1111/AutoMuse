@@ -95,11 +95,12 @@ class AutoMuse():
             to_pos = joints[i+1]
             append(from_j, to_pos) 
         
-    def generate_single(self, imgdata, scale=1.0):
+    def generate_single(self, imgPath, scale=1.0):
         """
         In maya, make a single new skeleton based on a single drawing
         """
-        joints = self.process("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/IMG_0013_000125.jpg")
+        #joints = self.process("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/IMG_0013_000125.jpg")
+        joints = self.process(imgPath)
         joints = (joints * scale).tolist()
         self.create_skeleton_joints(joints)
         
