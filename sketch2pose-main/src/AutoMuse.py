@@ -101,7 +101,7 @@ class AutoMuse():
         """
         #joints = self.process("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/IMG_0013_000125.jpg")
         joints = self.process(imgPath)
-        joints = (joints * scale).tolist()
+        joints = (-1 * joints * scale).tolist() # -1 as it seems to be flipped
         self.create_skeleton_joints(joints)
         
         
