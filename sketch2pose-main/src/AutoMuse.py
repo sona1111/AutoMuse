@@ -64,6 +64,57 @@ print(out)
 """
 
 from pose import main_infer, main_infer_get_models
+from scipy.spatial.transform import Rotation as R
+
+joint_search_terms = (
+    ("Hips",),
+    ("LeftUpLeg", "Left Upper Leg",),
+    ("RightUpLeg", "Right Upper Leg",),
+    ("Spine",),
+    ("LeftLeg","Left Leg"),
+    ("RightLeg", "Right Leg",),
+    ("Spine1",),
+    ("LeftFoot", "Left Foot",),
+    ("RightFoot", "Right Foot",),
+    ("Spine2", "Thorax",),
+    ("LeftToeBase", "Left Toe",),
+    ("RightToeBase", "Right Toe",),
+    ("Neck",),
+    ("LeftShoulder", "Left Shoulder",),
+    ("RightShoulder", "Right Shoulder",),
+    ("Head",),    
+    ("LeftArm", "Left Arm",),
+    ("RightArm", "Right Arm",),
+    ("LeftForeArm", "Left ForeArm",),
+    ("RightForeArm", "Right ForeArm",),
+    ("LeftHand", "Left Hand",),
+    ("RightHand", "Right Hand",),
+)
+
+JOINTS = (
+        "Hips",
+        "Left Upper Leg",
+        "Right Upper Leg",
+        "Spine",
+        "Left Leg",
+        "Right Leg",
+        "Spine1",
+        "Left Foot",
+        "Right Foot",
+        "Thorax",
+        "Left Toe",
+        "Right Toe",
+        "Neck",
+        "Left Shoulder",
+        "Right Shoulder",
+        "Head",
+        "Left ForeArm",
+        "Right ForeArm",
+        "Left Arm",
+        "Right Arm",
+        "Left Hand",
+        "Right Hand",
+)
 
 class AutoMuse():
 
@@ -94,16 +145,84 @@ class AutoMuse():
             from_j = maya_joints[SKELETON[i]]
             to_pos = joints[i+1]
             append(from_j, to_pos) 
+            
+    def update_skel_with_smpl(self, skel_root, smpl_results):
+
+        search_results = [None] * len(joint_search_terms)       
+        
+        result = set()
+        children = set(self.cmds.listRelatives(skel_root, fullPath=True) or [])
+        
+        while children:
+            result.update(children)
+            children = set(self.cmds.listRelatives(children, fullPath=True) or []) - result
+            
+        result.update(skel_root)
+            
+        for i, names in enumerate(joint_search_terms):
+            for name in names:
+                for exist_joint in result:
+                    if not self.cmds.nodeType(exist_joint) == "joint":
+                        continue
+                    leaf = exist_joint.split('|')[-1].lower()
+                    if name.lower() in leaf:
+                        
+                        x, y, z = smpl_results[i]
+                        print(f"setting joint {leaf} - {JOINTS[i]}", x, y, z, "(deg)")
+                        self.cmds.joint(exist_joint, e=True, ax=x, ay=y, az=z)
+                        
+                        search_results[i] = exist_joint
+                        break
+                if search_results[i]:
+                    break
+            if search_results[i] is None:
+                raise Exception(f"Couldn't find joint {names} in skeleton")
+            
+        
+            
+    def run_model_single(self, imgPath, scale=1.0):
+        _joints_pos, joints_rot = self.process(imgPath)
+        joints_rot = joints_rot.reshape(22, 3)
+        return joints_rot.tolist()
+        rotations = [R.from_rotvec(aa) for aa in joints_rot]
+        eulers = [r.as_euler('xzy', degrees=True).tolist() for r in rotations]
+        #eulers = [[0,0,0]] + eulers  # account for hips / root
+        
+        return eulers
         
     def generate_single(self, imgPath, scale=1.0):
         """
         In maya, make a single new skeleton based on a single drawing
         """
         #joints = self.process("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/IMG_0013_000125.jpg")
-        joints = self.process(imgPath)
-        joints = (-1 * joints * scale).tolist() # -1 as it seems to be flipped
+        joints, _joints_rot = self.process(imgPath)
+        joints[:, 1:] = joints[:, 1:] * -1 # -1 as it seems to be flipped
+        joints = (joints * scale).tolist() 
         self.create_skeleton_joints(joints)
         
+    def edit_single(self, imgPath, use_global_orient=False):
+        _joints_pos, joints_rot = self.process(imgPath)
+        joints_rot = joints_rot.reshape(22, 3)
+        rotations = [R.from_rotvec(aa) for aa in joints_rot]
+        eulers = [r.as_euler('xyz', degrees=True).tolist() for r in rotations]
+        #eulers = [[0,0,0]] + eulers  # account for hips / root
+        if use_global_orient:
+            eulers[0] = [0.0, 0.0, -1.0 * eulers[0][2]]
+        else:
+            eulers[0] = [0.0, 0.0, 0.0]
+        edit_skel = self.cmds.ls(selection=True)
+        self.update_skel_with_smpl(edit_skel, eulers)
         
-    def process(self, imgPath):
-        return main_infer([imgPath], *self.loaded_model_args)[0]
+        
+    def process(self, imgPath):    
+        joints_pos_return, joints_rot_return = main_infer([imgPath], *self.loaded_model_args)
+        return joints_pos_return[0], joints_rot_return[0]
+        
+        
+
+if __name__ == "__main__":
+    am = AutoMuse(None)
+    joints = am.run_model_single("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/Sketch13z.png", scale=1.0)
+    from pprint import pprint
+    pprint(joints)
+    

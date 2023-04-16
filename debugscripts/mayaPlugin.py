@@ -111,6 +111,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         genSkelBtn.clicked.connect(self.genSkeleton)
         row2.addWidget(genSkelBtn)
         replaceSkelBtn = QtWidgets.QPushButton("Replace Selected Skeleton")
+        replaceSkelBtn.clicked.connect(self.editSkeleton)
         row2.addWidget(replaceSkelBtn)
                 
         layout.addLayout(row2)
@@ -194,6 +195,10 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         print(self.scaleSpinner.value())
         self.canvas.save_image(self.TMP_IMG_PATH)
         autoMuse.generate_single(self.TMP_IMG_PATH, scale=self.scaleSpinner.value())
+        
+    def editSkeleton(self):
+        self.canvas.save_image(self.TMP_IMG_PATH)
+        autoMuse.edit_single(self.TMP_IMG_PATH)
         
     def mouseMoveEvent(self, e):
         if self.last_x is None: # First event.

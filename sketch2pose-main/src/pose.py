@@ -1437,8 +1437,16 @@ def spin_infer(
             zero_hands=True,
         )
 
-    joints = smpl_output.joints.squeeze(0).cpu().numpy()
-    return joints
+    #print(dir(smpl_output))
+    #print("body pose")
+    #print(smpl_output.body_pose)
+    hips = smpl_output.global_orient.cpu().numpy()
+    joints_pos = smpl_output.joints.squeeze(0).cpu().numpy()
+    joints_rot = smpl_output.body_pose.squeeze(0).cpu().numpy()
+    hips = smpl_output.global_orient.cpu().numpy()
+    joints_rot = np.append(hips.reshape(3), joints_rot)
+    #print('shape', joints_rot.shape, hips.shape)
+    return joints_pos, joints_rot
 
 def eft_step(
     model_hmr,
@@ -2071,7 +2079,8 @@ def main_infer(image_paths, model_pose, device, model_contact, model_hmr, smpl, 
     path_to_imgs = [Path(x) for x in image_paths]
 
     
-    joints_return = []
+    joints_pos_return = []
+    joints_rot_return = []
 
     for img_path in path_to_imgs:
         if not any(
@@ -2131,7 +2140,7 @@ def main_infer(image_paths, model_pose, device, model_contact, model_hmr, smpl, 
         _, input_img = spin.process_image(img_path, input_res=spin.constants.IMG_RES)
         input_img = input_img.to(device)
 
-        joints = spin_infer(
+        joints_pos, joints_rot = spin_infer(
             model_hmr,
             smpl,
             selector,
@@ -2147,9 +2156,10 @@ def main_infer(image_paths, model_pose, device, model_contact, model_hmr, smpl, 
             None,
         )
         
-        joints_return.append(joints)
+        joints_pos_return.append(joints_pos)
+        joints_rot_return.append(joints_rot)
         
-    return joints_return
+    return joints_pos_return, joints_rot_return
         
 
 if __name__ == "__main__":
