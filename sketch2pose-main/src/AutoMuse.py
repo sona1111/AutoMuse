@@ -63,6 +63,11 @@ print(out)
 
 """
 
+# for importing the HRnet libs
+import sys
+sys.path.insert(0, 'C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/src')
+
+
 from pose import main_infer, main_infer_get_models
 from scipy.spatial.transform import Rotation as R
 
@@ -116,14 +121,27 @@ JOINTS = (
         "Right Hand",
 )
 
+post_model_paths = {
+    "s2p": "C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/models/hrn_w48_384x288.onnx",
+    "dhrn": "C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/models/retrain/pose_hrnet_w48_384x288_real.onnx",
+    "retrained": ""
+}
+
+
 class AutoMuse():
 
-    def __init__(self, cmds):
+    def __init__(self, cmds, pose_model="s2p-150-60"):
         print("Loading models")
-        self.loaded_model_args = main_infer_get_models(use_contacts=False, use_msc=False)
-        # model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel
-        print("Models loaded")
+        self.load_model(pose_model)
+        self.only_rough = True
         self.cmds = cmds
+        
+    def load_model(self, pose_model):
+        print("Loading model", pose_model)
+        self.model_name, self.iterations_rough, self.iterations_opt = pose_model.split('-')
+        self.loaded_model_args = main_infer_get_models(use_contacts=True, use_msc=True, pose_model_path=post_model_paths[self.model_name])        
+        print("Models loaded")
+    
         
     
     def create_skeleton_joints(self, joints):
@@ -165,11 +183,11 @@ class AutoMuse():
                     if not self.cmds.nodeType(exist_joint) == "joint":
                         continue
                     leaf = exist_joint.split('|')[-1].lower()
-                    if name.lower() in leaf:
+                    if leaf.endswith(name.lower()):
                         
                         x, y, z = smpl_results[i]
                         print(f"setting joint {leaf} - {JOINTS[i]}", x, y, z, "(deg)")
-                        self.cmds.joint(exist_joint, e=True, ax=x, ay=y, az=z)
+                        self.cmds.joint(exist_joint, e=True, ax=x, ay=y, az=z, roo='xyz')
                         
                         search_results[i] = exist_joint
                         break
@@ -178,6 +196,38 @@ class AutoMuse():
             if search_results[i] is None:
                 raise Exception(f"Couldn't find joint {names} in skeleton")
             
+    def reset_skel(self):
+        
+        skel_root = self.cmds.ls(selection=True)
+        search_results = [None] * len(joint_search_terms)       
+        
+        result = set()
+        children = set(self.cmds.listRelatives(skel_root, fullPath=True) or [])
+        
+        while children:
+            result.update(children)
+            children = set(self.cmds.listRelatives(children, fullPath=True) or []) - result
+            
+        result.update(skel_root)
+            
+        for i, names in enumerate(joint_search_terms):
+            for name in names:
+                for exist_joint in result:
+                    if not self.cmds.nodeType(exist_joint) == "joint":
+                        continue
+                    leaf = exist_joint.split('|')[-1].lower()
+                    if leaf.endswith(name.lower()):
+                        
+                        x, y, z = 0, 0, 0
+                        print(f"setting joint {leaf} - {JOINTS[i]}", x, y, z, "(deg)")
+                        self.cmds.joint(exist_joint, e=True, ax=x, ay=y, az=z, roo='xyz')
+                        
+                        search_results[i] = exist_joint
+                        break
+                if search_results[i]:
+                    break
+            if search_results[i] is None:
+                raise Exception(f"Couldn't find joint {names} in skeleton")
         
             
     def run_model_single(self, imgPath, scale=1.0):
@@ -185,7 +235,7 @@ class AutoMuse():
         joints_rot = joints_rot.reshape(22, 3)
         return joints_rot.tolist()
         rotations = [R.from_rotvec(aa) for aa in joints_rot]
-        eulers = [r.as_euler('xzy', degrees=True).tolist() for r in rotations]
+        eulers = [r.as_euler('xyz', degrees=True).tolist() for r in rotations]
         #eulers = [[0,0,0]] + eulers  # account for hips / root
         
         return eulers
@@ -200,14 +250,19 @@ class AutoMuse():
         joints = (joints * scale).tolist() 
         self.create_skeleton_joints(joints)
         
-    def edit_single(self, imgPath, use_global_orient=False):
+    def edit_single(self, imgPath, use_global_orient=False, xo=-1, yo=-1, zo=-1, ro='xyz'):
         _joints_pos, joints_rot = self.process(imgPath)
         joints_rot = joints_rot.reshape(22, 3)
         rotations = [R.from_rotvec(aa) for aa in joints_rot]
         eulers = [r.as_euler('xyz', degrees=True).tolist() for r in rotations]
         #eulers = [[0,0,0]] + eulers  # account for hips / root
+        print('global', eulers[0])
+        # - - y
         if use_global_orient:
-            eulers[0] = [0.0, 0.0, -1.0 * eulers[0][2]]
+            #eulers[0] = [0.0, 0.0, -1.0 * eulers[0][2]]
+            print(eulers[0])
+            
+            eulers[0] = [xo*eulers[0][ro.index('x')], yo*eulers[0][ro.index('y')], zo*eulers[0][ro.index('z')]]            
         else:
             eulers[0] = [0.0, 0.0, 0.0]
         edit_skel = self.cmds.ls(selection=True)
@@ -215,14 +270,19 @@ class AutoMuse():
         
         
     def process(self, imgPath):    
-        joints_pos_return, joints_rot_return = main_infer([imgPath], *self.loaded_model_args)
+        joints_pos_return, joints_rot_return = main_infer([imgPath], self.only_rough, self.iterations_rough, self.iterations_opt, True, True, *self.loaded_model_args)
         return joints_pos_return[0], joints_rot_return[0]
+        
+    
+    
+        
         
         
 
 if __name__ == "__main__":
-    am = AutoMuse(None)
+    am = AutoMuse(None, pose_model="dhrn") # dhrn
     joints = am.run_model_single("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/Sketch13z.png", scale=1.0)
+
     from pprint import pprint
     pprint(joints)
     

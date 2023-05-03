@@ -548,6 +548,7 @@ def optimize(
     writer=None,
     i_ini=0,
 ):
+
     to_save = False
     if save_path is not None:
         (
@@ -625,11 +626,11 @@ def optimize(
                 )
                 lpar = (
                     Ltan
-                    + c_new_mse * (args.c_f * Lcos + args.c_parallel * Lpar)
+                    + c_new_mse * (1000 * Lcos + 100 * Lpar)
                     + Lspine
-                    + args.c_reg * Lgr
-                    + args.c_reg * Lstraight3d
-                    + args.c_cont2d * Lcon2d
+                    + 1000 * Lgr
+                    + 1000 * Lstraight3d
+                    + 1 * Lcon2d
                 )
                 loss = loss + 300 * lpar
 
@@ -659,7 +660,7 @@ def optimize(
                             (vertices_pred[0, foot_inds, zind] - mean_zfoot_val[attr])
                             ** 2
                         ).sum()
-                        loss = loss + args.c_reg * loss_foot
+                        loss = loss + 1000 * loss_foot
 
                         if writer is not None:
                             writer.add_scalar(
@@ -673,7 +674,7 @@ def optimize(
                     loss_sh = (
                         (vertices_pred[0, inds, 1] - loss_parallel.ground) ** 2
                     ).sum()
-                    loss = loss + args.c_reg * loss_sh
+                    loss = loss + 1000 * loss_sh
 
                     if writer is not None:
                         writer.add_scalar(
@@ -714,7 +715,7 @@ def optimize(
                         cntct,
                         vertices_pred,
                     )
-                    loss = loss + args.c_msc * msc_loss
+                    loss = loss + 17500 * msc_loss
 
                     if writer is not None:
                         writer.add_scalar(
@@ -892,11 +893,11 @@ def optimize_ft(
                 )
                 lpar = (
                     Ltan
-                    + c_new_mse * (args.c_f * Lcos + args.c_parallel * Lpar)
+                    + c_new_mse * (1000 * Lcos + 100 * Lpar)
                     + Lspine
-                    + args.c_reg * Lgr
-                    + args.c_reg * Lstraight3d
-                    + args.c_cont2d * Lcon2d
+                    + 1000 * Lgr
+                    + 1000 * Lstraight3d
+                    + 1 * Lcon2d
                 )
                 loss = loss + 300 * lpar
 
@@ -926,7 +927,7 @@ def optimize_ft(
                             (vertices_pred[0, foot_inds, zind] - mean_zfoot_val[attr])
                             ** 2
                         ).sum()
-                        loss = loss + args.c_reg * loss_foot
+                        loss = loss + 1000 * loss_foot
 
                         if writer is not None:
                             writer.add_scalar(
@@ -940,7 +941,7 @@ def optimize_ft(
                     loss_sh = (
                         (vertices_pred[0, inds, 1] - loss_parallel.ground) ** 2
                     ).sum()
-                    loss = loss + args.c_reg * loss_sh
+                    loss = loss + 1000 * loss_sh
 
                     if writer is not None:
                         writer.add_scalar(
@@ -971,7 +972,7 @@ def optimize_ft(
                         cntct,
                         vertices_pred,
                     )
-                    loss = loss + args.c_msc * msc_loss
+                    loss = loss + 17500 * msc_loss
 
                     if writer is not None:
                         writer.add_scalar(
@@ -1260,6 +1261,45 @@ def get_contacts(
         contact = np.array([])
 
     return contact
+    
+def get_contacts_infer(    
+    sc_module,
+    y_data_conts,
+    keypoints_2d,
+    vertices,
+    bone_to_params,
+    loss_parallel,
+    img_size_original,
+    save_path,
+):
+    use_contacts = True
+    use_msc = False
+    c_mse = 0
+
+    if use_contacts:
+        assert c_mse == 0
+        contact, contact_2d, for_mask = find_contacts(
+            y_data_conts, keypoints_2d, bone_to_params
+        )
+        if len(contact_2d) > 0:
+            loss_parallel.contact_2d = contact_2d
+
+            mask = np.zeros((spin.constants.IMG_RES, spin.constants.IMG_RES), dtype="uint8")
+            mask += 255
+            cv2.drawContours(mask, for_mask, -1, 0, 2)
+            mask = cv2.resize(mask, img_size_original[::-1])
+            
+
+        if len(contact) == 0:
+            _, contact = sc_module.verts_in_contact(vertices, return_idx=True)
+            contact = contact.cpu().numpy().ravel()
+    elif use_msc:
+        _, contact = sc_module.verts_in_contact(vertices, return_idx=True)
+        contact = contact.cpu().numpy().ravel()
+    else:
+        contact = np.array([])
+
+    return contact
 
 
 def save_all(
@@ -1437,13 +1477,14 @@ def spin_infer(
             zero_hands=True,
         )
 
-    #print(dir(smpl_output))
+    print(dir(smpl_output))
     #print("body pose")
     #print(smpl_output.body_pose)
-    hips = smpl_output.global_orient.cpu().numpy()
+    #hips = smpl_output.global_orient.cpu().numpy()
     joints_pos = smpl_output.joints.squeeze(0).cpu().numpy()
     joints_rot = smpl_output.body_pose.squeeze(0).cpu().numpy()
     hips = smpl_output.global_orient.cpu().numpy()
+    print('global_orient inner', hips)
     joints_rot = np.append(hips.reshape(3), joints_rot)
     #print('shape', joints_rot.shape, hips.shape)
     return joints_pos, joints_rot
@@ -1540,6 +1581,89 @@ def eft_step(
 
     return vertices, keypoints_3d_pred, contact
 
+def eft_step_infer(
+    model_hmr,
+    smpl,
+    selector,
+    input_img,
+    keypoints_2d,
+    optimizer,
+    args,
+    loss_mse,
+    loss_parallel,
+    c_beta,
+    sc_module,
+    y_data_conts,
+    bone_to_params,
+    img_original,
+    predicted_keypoints_2d,
+    predicted_contact_heatmap_raw,
+    shift,
+    scale,
+    ax2,
+    summary_writer,
+    save_path,
+    iter_override=150,
+    get_finalopt_data=False
+):
+    img_size_original = img_original.shape[:2]
+    (
+        rotmat_pred,
+        betas_pred,
+        camera_pred,
+        keypoints_3d_pred,
+        _,
+        smpl_output,
+        _,
+        _,
+    ) = optimize(
+        model_hmr,
+        smpl,
+        selector,
+        input_img,
+        keypoints_2d,
+        optimizer,
+        args,
+        loss_mse=loss_mse,
+        loss_parallel=loss_parallel,
+        c_mse=1,
+        c_new_mse=0,
+        c_beta=c_beta,
+        sc_crit=None,
+        msc_crit=None,
+        contact=None,
+        n_steps=iter_override,
+        writer=summary_writer        
+    )
+
+    # find contacts
+    if get_finalopt_data:
+        vertices = smpl_output.vertices.detach()
+        contact = get_contacts_infer(            
+            sc_module,
+            y_data_conts,
+            keypoints_2d,
+            vertices,
+            bone_to_params,
+            loss_parallel,
+            img_size_original,
+            save_path,
+        )
+    else:
+        vertices = None
+        contact = None
+    
+    
+    joints_pos = smpl_output.joints.squeeze(0).cpu().numpy()
+    joints_rot = smpl_output.body_pose.squeeze(0).cpu().numpy()
+    hips = smpl_output.global_orient.cpu().numpy()
+    print('global_orient inner 2', hips)
+    joints_rot = np.append(hips.reshape(3), joints_rot)
+    print('global_orient inner 3', joints_rot)
+    
+
+    
+    return joints_pos, joints_rot, vertices, keypoints_3d_pred, contact
 
 def dc_step(
     model_hmr,
@@ -1621,6 +1745,67 @@ def dc_step(
 
     return rotmat_pred
 
+def dc_step_infer(
+    model_hmr,
+    smpl,
+    selector,
+    input_img,
+    keypoints_2d,
+    optimizer,
+    args,
+    loss_mse,
+    loss_parallel,
+    c_mse,
+    c_new_mse,
+    c_beta,
+    sc_crit,
+    msc_crit,
+    contact,
+    use_contacts,
+    use_msc,
+    img_original,
+    predicted_keypoints_2d,
+    predicted_contact_heatmap_raw,
+    shift,
+    scale,
+    ax2,
+    summary_writer,
+    save_path,
+    iter_override=60
+):
+    (
+        rotmat_pred,
+        betas_pred,
+        camera_pred,
+        keypoints_3d_pred,
+        _,
+        smpl_output,
+        _,
+        _,
+    ) = optimize(
+        model_hmr,
+        smpl,
+        selector,
+        input_img,
+        keypoints_2d,
+        optimizer,
+        args,
+        loss_mse=loss_mse,
+        loss_parallel=loss_parallel,
+        c_mse=c_mse,
+        c_new_mse=c_new_mse,
+        c_beta=c_beta,
+        sc_crit=sc_crit,
+        msc_crit=msc_crit if use_contacts or use_msc else None,
+        contact=contact if use_contacts or use_msc else None,
+        n_steps=iter_override if use_contacts or use_msc else 0,  # + 60,
+        # save_path=(img_original, predicted_keypoints_2d, save_path, shift, scale, ax2, "dc"),
+        writer=summary_writer,
+        i_ini=60 + 90,
+    )
+
+
+    return rotmat_pred
 
 def us_step(
     model_hmr,
@@ -1695,53 +1880,130 @@ def us_step(
         save_path,
         "us",
     )
+    
+def us_step_infer(
+    model_hmr,
+    smpl,
+    selector,
+    input_img,
+    rotmat_pred,
+    keypoints_2d,
+    args,
+    loss_mse,
+    loss_parallel,
+    c_mse,
+    c_new_mse,
+    sc_crit,
+    msc_crit,
+    contact,
+    use_contacts,
+    use_msc,
+    img_original,
+    keypoints_3d_pred,
+    summary_writer,
+    save_path,
+    iter_override=60
+):
+    (_, _, camera_pred_us, _, _, _, smpl_output_us, _, _,) = get_pred_and_data(
+        model_hmr,
+        smpl,
+        selector,
+        input_img,
+        use_betas=False,
+        zero_hands=True,
+    )
 
+    rotmat_pred_us, smpl_output = optimize_ft(
+        rotmat_pred,
+        camera_pred_us,
+        smpl,
+        selector,
+        input_img,
+        keypoints_2d,
+        args,
+        loss_mse=loss_mse,
+        loss_parallel=loss_parallel,
+        c_mse=c_mse,
+        c_new_mse=c_new_mse,
+        sc_crit=sc_crit,
+        msc_crit=msc_crit if use_contacts or use_msc else None,
+        contact=contact if use_contacts or use_msc else None,
+        n_steps=iter_override if use_contacts or use_msc else 0,  # + 60,
+        # save_path=(img_original, predicted_keypoints_2d, save_path, shift, scale, ax2, "dc"),
+        writer=summary_writer,
+        i_ini=60 + 90 + 60,
+        zero_hands=True,
+        fist=[],
+    )
+    
+    hips = smpl_output.global_orient.cpu().numpy()
+    joints_pos = smpl_output.joints.squeeze(0).cpu().numpy()
+    joints_rot = smpl_output.body_pose.squeeze(0).cpu().numpy()
+    hips = smpl_output.global_orient.cpu().numpy()
+    joints_rot = np.append(hips.reshape(3), joints_rot)
+    
+    return joints_pos, joints_rot
+
+
+import time
 
 def main():
     args = parse_args()
-    #print(args)
-
+    print(args)
+    
+    
+    
+    
+    
+    s_t = time.time()
+    
+    
     # models
     model_pose = cv2.dnn.readNetFromONNX(
-        args.pose_estimation_model_path
+        str(MODELS_DIR / "hrn_w48_384x288.onnx")
     )  # "hrn_w48_384x288.onnx"
     model_contact = cv2.dnn.readNetFromONNX(
-        args.contact_model_path
+        str(MODELS_DIR / "contact_hrn_w32_256x192.onnx")
     )  # "contact_hrn_w32_256x192.onnx"
 
     device = (
-        torch.device(args.device) if torch.cuda.is_available() else torch.device("cpu")
+        torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     )
-    model_hmr = spin.hmr(args.smpl_mean_params_path)  # "smpl_mean_params.npz"
+    model_hmr = spin.hmr(str(MODELS_DIR / "data/smpl_mean_params.npz"))  # "smpl_mean_params.npz"
     model_hmr.to(device)
     checkpoint = torch.load(
-        args.spin_model_path,  # "spin_model_smplx_eft_18.pt"
+        str(MODELS_DIR / "spin_model_smplx_eft_18.pt"),  # "spin_model_smplx_eft_18.pt"
         map_location="cpu"
     )
 
     smpl = spin.SMPLX(
-        args.smpl_model_dir,  # "models/smplx"
+        str(MODELS_DIR / "models/smplx"),  # "models/smplx"
         batch_size=1,
         create_transl=False,
         use_pca=False,
-        flat_hand_mean=args.fist is not None,
+        flat_hand_mean=args.fist is not None, #args.fist is not None,
     )
     smpl.to(device)
 
     selector = get_selector()
 
+
+
+    bone_to_params = np.load(str(MODELS_DIR / "smplx_parametrization/bone_to_param2.npy"), allow_pickle=True).item()
+    foot_inds = np.load(str(MODELS_DIR / "smplx_parametrization/foot_inds.npy"), allow_pickle=True).item()
+    left_foot_inds = foot_inds["left_foot_inds"]
+    right_foot_inds = foot_inds["right_foot_inds"]
+    
+    
+
     use_contacts = args.use_contacts
     use_msc = args.use_msc
 
-    bone_to_params = np.load(args.bone_parametrization_path, allow_pickle=True).item()
-    foot_inds = np.load(args.foot_inds_path, allow_pickle=True).item()
-    left_foot_inds = foot_inds["left_foot_inds"]
-    right_foot_inds = foot_inds["right_foot_inds"]
 
     if use_contacts:
         model_type = args.smpl_type
         sc_module = selfcontact.SelfContact(
-            essentials_folder=args.essentials_dir,  # "smplify-xmc-essentials"
+            essentials_folder=str(MODELS_DIR / "smplify-xmc-essentials"),  # "smplify-xmc-essentials"
             geothres=0.3,
             euclthres=0.02,
             test_segments=True,
@@ -1801,8 +2063,9 @@ def main():
         path_to_imgs = path_to_imgs.iterdir()
     else:
         path_to_imgs = [path_to_imgs]
-
-    print("-Models loaded-")
+    
+    e_t = time.time()
+    print("Model load time", e_t - s_t)
 
     for img_path in path_to_imgs:
         if not any(
@@ -1812,6 +2075,7 @@ def main():
 
         img_name = img_path.stem
 
+        s_t = time.time()
         # use 2d keypoints detection
         (
             img_original,
@@ -1824,6 +2088,9 @@ def main():
             input_img_size=pose_estimation.IMG_SIZE,
             return_kps=True,
         )
+        
+        e_t = time.time()
+        print("pose_estimation time", e_t - s_t)
 
         save_path = root_path / img_name
         save_path.mkdir(exist_ok=True, parents=True)
@@ -1832,6 +2099,7 @@ def main():
 
         summary_writer = SummaryWriter(log_dir=save_path / f"runDoknc2_{c_new_mse}")
 
+        s_t = time.time()
         img_original = cv2.cvtColor(img_original, cv2.COLOR_BGR2RGB)
         img_size_original = img_original.shape[:2]
         keypoints_2d, shift, scale, ax2 = normalize_keypoints_to_spin(
@@ -1839,7 +2107,11 @@ def main():
         )
         keypoints_2d = torch.from_numpy(keypoints_2d)
         keypoints_2d = keypoints_2d.to(device)
-
+        
+        e_t = time.time()
+        print("keypoints_2d time", e_t - s_t)
+        s_t = time.time()
+        
         (
             predicted_contact_heatmap,
             predicted_contact_heatmap_raw,
@@ -1850,6 +2122,10 @@ def main():
         ).resize(img_size_original[::-1])
         predicted_contact_heatmap_raw = cv2.resize(very_hm_raw, img_size_original[::-1])
 
+        e_t = time.time()
+        print("predicted_contact_heatmap_raw time", e_t - s_t)
+        s_t = time.time()
+
         if c_new_mse == 0:
             predicted_contact_heatmap_raw = None
 
@@ -1858,6 +2134,10 @@ def main():
         model_hmr.load_state_dict(checkpoint["model"], strict=True)
         model_hmr.train()
         freeze_layers(model_hmr)
+        
+        e_t = time.time()
+        print("model_hmr load time", e_t - s_t)
+        s_t = time.time()
 
         _, input_img = spin.process_image(img_path, input_res=spin.constants.IMG_RES)
         input_img = input_img.to(device)
@@ -1878,8 +2158,10 @@ def main():
             save_path,
         )
 
-        continue
-        
+        #continue
+        e_t = time.time()
+        print("spin_step time", e_t - s_t)
+        s_t = time.time()
         
         optimizer = optim.Adam(
             filter(lambda p: p.requires_grad, model_hmr.parameters()),
@@ -1909,6 +2191,10 @@ def main():
             summary_writer,
             save_path,
         )
+        
+        e_t = time.time()
+        print("eft_step time", e_t - s_t)
+        s_t = time.time()
 
         if args.use_natural:
             get_natural(
@@ -1918,6 +2204,9 @@ def main():
         if args.use_cos:
             cos_r = get_cos(keypoints_3d_pred, args.use_angle_transf, loss_parallel)
             np.save(save_path / "cos_hist", cos_r.cpu().numpy())
+            
+        c_mse = 0
+        c_new_mse
 
         rotmat_pred = dc_step(
             model_hmr,
@@ -1946,6 +2235,10 @@ def main():
             summary_writer,
             save_path,
         )
+        
+        e_t = time.time()
+        print("dc_step time", e_t - s_t)
+        s_t = time.time()
 
         us_step(
             model_hmr,
@@ -1970,13 +2263,21 @@ def main():
             save_path,
         )
         
+        e_t = time.time()
+        print("us_step time", e_t - s_t)
+        s_t = time.time()
+        
 
-def main_infer_get_models(use_contacts, use_msc):
+def main_infer_get_models(use_contacts, use_msc, pose_model_path):
 
     # models
+    print("using pose model path", pose_model_path)
+    
     model_pose = cv2.dnn.readNetFromONNX(
-        str(MODELS_DIR / "hrn_w48_384x288.onnx")
+        pose_model_path
+        #str(MODELS_DIR / "hrn_w48_384x288.onnx")
     )  # "hrn_w48_384x288.onnx"
+    
     model_contact = cv2.dnn.readNetFromONNX(
         str(MODELS_DIR / "contact_hrn_w32_256x192.onnx")
     )  # "contact_hrn_w32_256x192.onnx"
@@ -1987,7 +2288,7 @@ def main_infer_get_models(use_contacts, use_msc):
     model_hmr = spin.hmr(str(MODELS_DIR / "data/smpl_mean_params.npz"))  # "smpl_mean_params.npz"
     model_hmr.to(device)
     checkpoint = torch.load(
-        str(MODELS_DIR / "spin_model_smplx_eft_18.pt"),  # "spin_model_smplx_eft_18.pt"
+        str(MODELS_DIR / "spin_model_smplx_eft_18.pt"),  # "spin_model_smplx_eft_18.pt" "spin_model_updated.pt"
         map_location="cpu"
     )
 
@@ -2012,7 +2313,7 @@ def main_infer_get_models(use_contacts, use_msc):
     if use_contacts:
         model_type = "smplx"
         sc_module = selfcontact.SelfContact(
-            essentials_folder="smplify-xmc-essentials",  # "smplify-xmc-essentials"
+            essentials_folder=str(MODELS_DIR / "smplify-xmc-essentials"),  # "smplify-xmc-essentials"
             geothres=0.3,
             euclthres=0.02,
             test_segments=True,
@@ -2042,7 +2343,7 @@ def main_infer_get_models(use_contacts, use_msc):
         sc_crit = None
         msc_crit = None
 
-    loss_mse = losses.MSE([1, 10, 13])  # Neck + Right Upper Leg + Left Upper Leg
+    
 
     ignore = (
         (1, 2),  # Neck + Right Shoulder
@@ -2058,16 +2359,17 @@ def main_infer_get_models(use_contacts, use_msc):
     c_mse = 0 #args.c_mse
     c_new_mse = 10 #args.c_par
     c_beta = 1e-3
+    
 
     if c_mse > 0:
         assert c_new_mse == 0
     elif c_mse == 0:
         assert c_new_mse > 0
         
-    return model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel
+    return model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel, sc_module, bone_to_params, left_foot_inds, right_foot_inds, sc_crit, msc_crit, use_contacts, use_msc
 
 
-def main_infer(image_paths, model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel):
+def main_infer(image_paths, only_rough, iterations_rough, iterations_opt, use_natural, use_cos, model_pose, device, model_contact, model_hmr, smpl, c_new_mse, checkpoint, selector, loss_parallel, sc_module, bone_to_params, left_foot_inds, right_foot_inds, sc_crit, msc_crit, use_contacts, use_msc):
     #args = parse_args()
     #print(args)
 
@@ -2075,9 +2377,18 @@ def main_infer(image_paths, model_pose, device, model_contact, model_hmr, smpl, 
 
     #root_path = Path(args.save_path)
     #root_path.mkdir(exist_ok=True, parents=True)
+    
+    run_keypoints = True
+    run_initial_opt = True
+    run_final_opt = not only_rough
+    
 
     path_to_imgs = [Path(x) for x in image_paths]
-
+    
+    loss_mse = losses.MSE([1, 10, 13])  # Neck + Right Upper Leg + Left Upper Leg
+    c_mse = 0 #args.c_mse
+    c_new_mse = 10 #args.c_par
+    c_beta = 1e-3
     
     joints_pos_return = []
     joints_rot_return = []
@@ -2090,71 +2401,170 @@ def main_infer(image_paths, model_pose, device, model_contact, model_hmr, smpl, 
 
         img_name = img_path.stem
 
-        # use 2d keypoints detection
-        (
-            img_original,
-            predicted_keypoints_2d,
-            _,
-            _,
-        ) = pose_estimation.infer_single_image(
-            model_pose,
-            img_path,
-            input_img_size=pose_estimation.IMG_SIZE,
-            return_kps=True,
-        )
+        if run_keypoints:
+            # use 2d keypoints detection
+            (
+                img_original,
+                predicted_keypoints_2d,
+                _,
+                _,
+            ) = pose_estimation.infer_single_image(
+                model_pose,
+                img_path,
+                input_img_size=pose_estimation.IMG_SIZE,
+                return_kps=True,
+            )
+            
+            
 
-        #save_path = root_path / img_name
-        #save_path.mkdir(exist_ok=True, parents=True)
-        # if (save_path / "us_orig.png").is_file():
-        #     return
+            #save_path = root_path / img_name
+            #save_path.mkdir(exist_ok=True, parents=True)
+            # if (save_path / "us_orig.png").is_file():
+            #     return
 
-        #summary_writer = SummaryWriter(log_dir=save_path / f"runDoknc2_{c_new_mse}")
+            #summary_writer = SummaryWriter(log_dir=save_path / f"runDoknc2_{c_new_mse}")
 
-        img_original = cv2.cvtColor(img_original, cv2.COLOR_BGR2RGB)
-        img_size_original = img_original.shape[:2]
-        keypoints_2d, shift, scale, ax2 = normalize_keypoints_to_spin(
-            predicted_keypoints_2d, img_size_original
-        )
-        keypoints_2d = torch.from_numpy(keypoints_2d)
-        keypoints_2d = keypoints_2d.to(device)
+            img_original = cv2.cvtColor(img_original, cv2.COLOR_BGR2RGB)
+            img_size_original = img_original.shape[:2]
+            keypoints_2d, shift, scale, ax2 = normalize_keypoints_to_spin(
+                predicted_keypoints_2d, img_size_original
+            )
+            keypoints_2d = torch.from_numpy(keypoints_2d)
+            keypoints_2d = keypoints_2d.to(device)
+            
 
-        (
-            predicted_contact_heatmap,
-            predicted_contact_heatmap_raw,
-            very_hm_raw,
-        ) = get_contact_heatmap(model_contact, img_path)
-        predicted_contact_heatmap_raw = Image.fromarray(
-            predicted_contact_heatmap_raw
-        ).resize(img_size_original[::-1])
-        predicted_contact_heatmap_raw = cv2.resize(very_hm_raw, img_size_original[::-1])
+            (
+                predicted_contact_heatmap,
+                predicted_contact_heatmap_raw,
+                very_hm_raw,
+            ) = get_contact_heatmap(model_contact, img_path)
+            predicted_contact_heatmap_raw = Image.fromarray(
+                predicted_contact_heatmap_raw
+            ).resize(img_size_original[::-1])
+            predicted_contact_heatmap_raw = cv2.resize(very_hm_raw, img_size_original[::-1])
 
-        if c_new_mse == 0:
-            predicted_contact_heatmap_raw = None
+            if c_new_mse == 0:
+                predicted_contact_heatmap_raw = None
 
-        y_data_conts = get_vertices_in_heatmap(predicted_contact_heatmap)
+            y_data_conts = get_vertices_in_heatmap(predicted_contact_heatmap)
 
-        model_hmr.load_state_dict(checkpoint["model"], strict=True)
-        model_hmr.train()
-        freeze_layers(model_hmr)
+            model_hmr.load_state_dict(checkpoint["model"], strict=True)
+            model_hmr.train()
+            freeze_layers(model_hmr)
 
-        _, input_img = spin.process_image(img_path, input_res=spin.constants.IMG_RES)
-        input_img = input_img.to(device)
+            _, input_img = spin.process_image(img_path, input_res=spin.constants.IMG_RES)
+            input_img = input_img.to(device)
 
-        joints_pos, joints_rot = spin_infer(
-            model_hmr,
-            smpl,
-            selector,
-            input_img,
-            img_original,
-            predicted_keypoints_2d,
-            predicted_contact_heatmap_raw,
-            loss_parallel,
-            shift,
-            scale,
-            ax2,
-            None,
-            None,
-        )
+            joints_pos, joints_rot = spin_infer(
+                model_hmr,
+                smpl,
+                selector,
+                input_img,
+                img_original,
+                predicted_keypoints_2d,
+                predicted_contact_heatmap_raw,
+                loss_parallel,
+                shift,
+                scale,
+                ax2,
+                None,
+                None,
+            )
+            
+        if run_initial_opt:
+            optimizer = optim.Adam(
+                filter(lambda p: p.requires_grad, model_hmr.parameters()),
+                lr=1e-6,
+            )
+
+            joints_pos, joints_rot, vertices, keypoints_3d_pred, contact = eft_step_infer(
+                model_hmr,
+                smpl,
+                selector,
+                input_img,
+                keypoints_2d,
+                optimizer,
+                None,
+                loss_mse,
+                loss_parallel,
+                c_beta,
+                sc_module,
+                y_data_conts,
+                bone_to_params,
+                img_original,
+                predicted_keypoints_2d,
+                predicted_contact_heatmap_raw,
+                shift,
+                scale,
+                ax2,
+                None,
+                None,
+                iter_override=iterations_rough,
+                get_finalopt_data=run_final_opt
+            )
+            
+        if run_final_opt:
+            if use_natural:
+                get_natural(
+                    keypoints_2d, vertices, right_foot_inds, left_foot_inds, loss_parallel, smpl,
+                )
+
+            if use_cos:
+                cos_r = get_cos(keypoints_3d_pred, True, loss_parallel) # args.use_angle_transf
+
+            rotmat_pred = dc_step_infer(
+                model_hmr,
+                smpl,
+                selector,
+                input_img,
+                keypoints_2d,
+                optimizer,
+                None,
+                loss_mse,
+                loss_parallel,
+                c_mse,
+                c_new_mse,
+                c_beta,
+                sc_crit,
+                msc_crit,
+                contact,
+                use_contacts,
+                use_msc,
+                img_original,
+                predicted_keypoints_2d,
+                predicted_contact_heatmap_raw,
+                shift,
+                scale,
+                ax2,
+                None,
+                None,
+                iter_override=iterations_opt
+            )
+            
+
+            joints_pos, joints_rot = us_step_infer(
+                model_hmr,
+                smpl,
+                selector,
+                input_img,
+                rotmat_pred,
+                keypoints_2d,
+                None,
+                loss_mse,
+                loss_parallel,
+                c_mse,
+                c_new_mse,
+                sc_crit,
+                msc_crit,
+                contact,
+                use_contacts,
+                use_msc,
+                img_original,
+                keypoints_3d_pred,
+                None,
+                None,
+                iter_override=iterations_opt
+            )
         
         joints_pos_return.append(joints_pos)
         joints_rot_return.append(joints_rot)
@@ -2164,8 +2574,17 @@ def main_infer(image_paths, model_pose, device, model_contact, model_hmr, smpl, 
 
 if __name__ == "__main__":
     #main()
-    model_args = main_infer_get_models(use_contacts=False, use_msc=False)
-    infer_result = main_infer(["data/images/010.jpg"], *model_args)
+    
+    # C:\Users\sunli\Documents\AutoMuse\env\scripts\activate.bat
+    # cd C:\Users\sunli\Documents\AutoMuse\sketch2pose-main
+    # python src/pose.py --save-path "C:\Users\sunli\Documents\AutoMuse\sketch2pose-main\output" --img-path "C:\Users\sunli\Documents\AutoMuse\sketch2pose-main\input" --use-contacts --use-natural --use-cos --use-angle-transf 
+    
+    model_args = main_infer_get_models(use_contacts=True, use_msc=True, pose_model_path="C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/models/hrn_w48_384x288.onnx")
+    #infer_result = main_infer(["data/images/010.jpg"], True, 150, 5, True, True, *model_args)
+    infer_result = main_infer(["C:/Users/sunli/Documents/AutoMuse/slide_demos/nek0/comparisons/verli6.png"], True, 150, 5, True, True, *model_args)
+    
+    
     #print("Result")
-    print(infer_result)
-    pass
+    #print(infer_result)
+    
+    #pass

@@ -13,12 +13,15 @@ from AutoMuse import AutoMuse
 autoMuse = AutoMuse(cmds)
 
 #image = QtGui.QImage("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/IMG_0013_000125.jpg")
+FIXED_IMG_WIDTH = 288*2
+FIXED_IMG_HEIGHT = 384*2
+
 
 class Canvas(QtWidgets.QLabel):
 
     def __init__(self):
         super().__init__()
-        pixmap = QtGui.QPixmap(600, 300)
+        pixmap = QtGui.QPixmap(FIXED_IMG_WIDTH, FIXED_IMG_HEIGHT)
         pixmap.fill(Qt.white)
         #pixmap = pixmap.fromImage(image)
         self.setPixmap(pixmap)
@@ -29,8 +32,14 @@ class Canvas(QtWidgets.QLabel):
     def update_image(self, path):
         print("loading path", path)
         image = QtGui.QImage(path)
-        pixmap = QtGui.QPixmap(600, 300)
-        pixmap = pixmap.fromImage(image)        
+        pixmap = QtGui.QPixmap(FIXED_IMG_WIDTH, FIXED_IMG_HEIGHT)
+        pixmap = pixmap.fromImage(image)   
+        pixmap = pixmap.scaled(FIXED_IMG_WIDTH, FIXED_IMG_HEIGHT, QtCore.Qt.KeepAspectRatio)     
+        self.setPixmap(pixmap)
+        
+    def clear(self):
+        pixmap = QtGui.QPixmap(FIXED_IMG_WIDTH, FIXED_IMG_HEIGHT)
+        pixmap.fill(Qt.white)        
         self.setPixmap(pixmap)
         
     def save_image(self, path):
@@ -86,6 +95,9 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
         
         self.canvas = Canvas()
+        self.canvas.update_image("C:/Users/sunli/Documents/AutoMuse/sketch2pose-main/data/images/IMG_0013_000125.jpg")
+        #self.canvas.setScaledContents(True)
+        
         self.TMP_IMG_PATH = "C:/Users/sunli/Pictures/TMP_AUTOMUSE.png"
 
         self.centralwidget = QtWidgets.QWidget(self)
@@ -94,7 +106,20 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         
         layout = QtWidgets.QVBoxLayout()
         self.centralwidget.setLayout(layout)
-        layout.addWidget(self.canvas)
+        
+        #scrollArea = QtWidgets.QScrollArea()
+        #scrollArea.setBackgroundRole(QtGui.QPalette.Dark)
+        #scrollArea.setWidgetResizable(False)
+        #scrollArea.setWidget(self.canvas)
+        
+        #layout.addWidget(scrollArea)
+        clearBtn = QtWidgets.QPushButton("Clear Image")
+        layout.addWidget(clearBtn)
+        clearBtn.clicked.connect(self.clearImage)
+        
+        canvas_row = QtWidgets.QHBoxLayout()
+        canvas_row.addWidget(self.canvas)
+        layout.addLayout(canvas_row)
         
         palette = QtWidgets.QHBoxLayout()
         self.add_palette_buttons(palette)
@@ -102,43 +127,73 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         
         row2 = QtWidgets.QHBoxLayout()
         
-        clearBtn = QtWidgets.QPushButton("Clear")
-        row2.addWidget(clearBtn)
+        
+        
         loadImgBtn = QtWidgets.QPushButton("Load Image")
         loadImgBtn.clicked.connect(self.loadImage)
         row2.addWidget(loadImgBtn)
-        genSkelBtn = QtWidgets.QPushButton("Generate Skeleton")
-        genSkelBtn.clicked.connect(self.genSkeleton)
-        row2.addWidget(genSkelBtn)
-        replaceSkelBtn = QtWidgets.QPushButton("Replace Selected Skeleton")
-        replaceSkelBtn.clicked.connect(self.editSkeleton)
-        row2.addWidget(replaceSkelBtn)
+        
+        
                 
         layout.addLayout(row2)
         
         row3 = QtWidgets.QHBoxLayout()
         
-        animationLabel = QtWidgets.QLabel("Animation")
-        row3.addWidget(animationLabel)
-        loadImgsBtn = QtWidgets.QPushButton("Load Images")
-        row3.addWidget(loadImgsBtn)        
+        genSkelBtn = QtWidgets.QPushButton("Generate Skeleton")
+        genSkelBtn.clicked.connect(self.genSkeleton)
+        row3.addWidget(genSkelBtn)
+        scaleLabel = QtWidgets.QLabel("Skeleton Scale")
+        row3.addWidget(scaleLabel)
+        self.scaleSpinner = QtWidgets.QDoubleSpinBox()
+        self.scaleSpinner.setRange(0.0, 100.0)
+        self.scaleSpinner.setValue(5.0)
+        row3.addWidget(self.scaleSpinner)
+
         
         layout.addLayout(row3)
         
         row4 = QtWidgets.QHBoxLayout()
         
-        scaleLabel = QtWidgets.QLabel("Skeleton Scale")
-        row4.addWidget(scaleLabel)
-        self.scaleSpinner = QtWidgets.QDoubleSpinBox()
-        self.scaleSpinner.setRange(0.0, 20.0)
-        self.scaleSpinner.setValue(5.0)
-        row4.addWidget(self.scaleSpinner)
-        meshLabel = QtWidgets.QLabel("Apply to mesh?")
-        row4.addWidget(meshLabel)
-        meshSelector = QtWidgets.QComboBox()
-        row4.addWidget(meshSelector)        
+        
+        replaceSkelBtn = QtWidgets.QPushButton("Replace Selected Skeleton")
+        replaceSkelBtn.clicked.connect(self.editSkeleton)
+        row4.addWidget(replaceSkelBtn)
+
+        resetSkelBtn = QtWidgets.QPushButton("Reset Selected Skeleton")
+        resetSkelBtn.clicked.connect(self.resetSkeleton)
+        row4.addWidget(resetSkelBtn)            
         
         layout.addLayout(row4)
+        
+        row5 = QtWidgets.QHBoxLayout()
+        
+        scaleLabel = QtWidgets.QLabel("Model")
+        row5.addWidget(scaleLabel)
+        meshSelector = QtWidgets.QComboBox()
+        row5.addWidget(meshSelector)        
+        
+        layout.addLayout(row5)
+        
+        row6 = QtWidgets.QHBoxLayout()
+        
+        scaleLabel = QtWidgets.QLabel("Rough Iter")
+        row6.addWidget(scaleLabel)
+        self.roughIterSpinner = QtWidgets.QSpinBox()
+        self.roughIterSpinner.setRange(1, 200)
+        self.roughIterSpinner.setValue(150)
+        row6.addWidget(self.roughIterSpinner)     
+        
+        scaleLabel = QtWidgets.QLabel("Final Iter")
+        row6.addWidget(scaleLabel)
+        self.finalIterSpinner = QtWidgets.QSpinBox()
+        self.finalIterSpinner.setRange(1, 200)
+        self.finalIterSpinner.setValue(60)
+        row6.addWidget(self.finalIterSpinner)  
+        
+        self.useGlobalAlign = QtWidgets.QCheckBox("Use Global Oriant")
+        row6.addWidget(self.useGlobalAlign)  
+        
+        layout.addLayout(row6)
         
         """
         self.pushButton = QtWidgets.QPushButton(self.centralwidget)
@@ -176,6 +231,9 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
          'c:\\',"Image files (*.jpg *.gif, *.jpeg, *.png)")
       self.canvas.update_image(fname[0])
       
+    def clearImage(self):
+        self.canvas.clear()
+      
     def getfiles(self):
       #unfinished
       dlg = QFileDialog()
@@ -191,14 +249,23 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
             data = f.read()
             self.contents.setText(data)
         
-    def genSkeleton(self):
-        print(self.scaleSpinner.value())
+    def genSkeleton(self):        
         self.canvas.save_image(self.TMP_IMG_PATH)
+        autoMuse.iterations_rough = self.roughIterSpinner.value()
+        autoMuse.iterations_opt = self.finalIterSpinner.value()
+        #autoMuse.only_rough = False
         autoMuse.generate_single(self.TMP_IMG_PATH, scale=self.scaleSpinner.value())
         
     def editSkeleton(self):
         self.canvas.save_image(self.TMP_IMG_PATH)
-        autoMuse.edit_single(self.TMP_IMG_PATH)
+        autoMuse.iterations_rough = self.roughIterSpinner.value()
+        autoMuse.iterations_opt = self.finalIterSpinner.value()
+        use_global_oriant = self.useGlobalAlign.isChecked()
+        #autoMuse.only_rough = False
+        autoMuse.edit_single(self.TMP_IMG_PATH, use_global_orient=use_global_oriant, ro='yxz') #'zxy' 'xzy' ''
+    
+    def resetSkeleton(self):        
+        autoMuse.reset_skel()
         
     def mouseMoveEvent(self, e):
         if self.last_x is None: # First event.
